@@ -1,22 +1,28 @@
 import numpy as np
 import cv2 as cv
 import os
-import glob
 from PIL import Image
 from tqdm import tqdm
 import argparse
 
 
 def extract_one(
-    uint8_image: np.ndarray, 
+    image_path: str, 
     block_size: int, 
     delta: int, 
     kernel_size: int
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     
+    if block_size <= 1 or block_size % 2 == 0:
+        raise ValueError("block_size must be an odd integer greater than 1.")
+    
+    # Load image
+    pil = Image.open(image_path).convert('L') # Convert to grayscale
+    original = np.array(pil).astype(np.uint8)
+
     # Binarize the image using adaptive thresholding to create a black and white mask.
     binarized = cv.adaptiveThreshold(
-        src=uint8_image,
+        src=original,
         maxValue=1,
         adaptiveMethod=cv.ADAPTIVE_THRESH_MEAN_C,
         thresholdType=cv.THRESH_BINARY_INV,
@@ -30,11 +36,11 @@ def extract_one(
     dilated = cv.dilate(binarized, kernel, iterations=1)
 
     # Find all connected components (i.e., separate white regions) in the dilated image.
-    num_labels, labels, stats, centroids = cv.connectedComponentsWithStats(dilated, 8, cv.CV_32S)
+    num_labels, labels, stats, _ = cv.connectedComponentsWithStats(dilated, 8, cv.CV_32S)
 
     # If there's only the background component, return early.
     if num_labels <= 1:
-        return binarized, dilated, dilated, uint8_image
+        return original, binarized, dilated, dilated, original
     
     # Find the label of the largest component (ignoring the background at index 0).
     areas = stats[1:, cv.CC_STAT_AREA]
@@ -50,67 +56,80 @@ def extract_one(
     w = stats[foreground_label, cv.CC_STAT_WIDTH]
     h = stats[foreground_label, cv.CC_STAT_HEIGHT]
     # Crop the original image to the bounding box of the foreground.
-    foreground = uint8_image[y:y+h, x:x+w]
+    foreground = original[y:y+h, x:x+w]
 
-    return binarized, dilated, foreground_mask, foreground
+    return original, binarized, dilated, foreground_mask, foreground
 
 
-def extract_folder(
-    input_folder: str, 
-    output_folder: str, 
-    block_size: int, 
-    delta: int, 
+def extract_all(
+    data_dir: str,
+    out_dir: str,
+    block_size: int,
+    delta: int,
     kernel_size: int
 ) -> None:
-    
-    # Create output folder if it doesn't exist
-    os.makedirs(output_folder, exist_ok=True)
-    
     # Supported image extensions
-    extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff', '*.tif']
+    extensions = ['jpg', 'jpeg', 'png', 'bmp', 'tiff', 'tif']
     
-    # Find all image files in the input folder
-    image_files = []
-    for ext in extensions:
-        image_files.extend(glob.glob(os.path.join(input_folder, ext)))
-        image_files.extend(glob.glob(os.path.join(input_folder, ext.upper())))
+    for dirpath, _, filenames in os.walk(data_dir):
+        # Create corresponding directory in the out dir
+        relative_path = os.path.relpath(dirpath, data_dir)
+        if relative_path == '.':
+            relative_path = ''
+        current_output_dir = os.path.join(out_dir, relative_path)
+        os.makedirs(current_output_dir, exist_ok=True)
 
-    print(f"Found {len(image_files)} images in '{os.path.basename(input_folder)}'")
-    
-    # Process each image
-    for image_path in tqdm(image_files, desc=f"Processing images in '{os.path.basename(input_folder)}'"):
-        try:
-            # Load image
-            pil = Image.open(image_path).convert('L') # Convert to grayscale
-            original = np.array(pil).astype(np.uint8)
+        image_files = []
+        for filename in filenames:
+            if any(filename.lower().endswith(ext) for ext in extensions):
+                image_files.append(os.path.join(dirpath, filename))
 
-            # Extract foreground using the extract_one() function
-            _, _, _, foreground = extract_one(original, block_size, delta, kernel_size)
-            
-            # Save the foreground image to the output folder
-            output_path = os.path.join(output_folder, f"{os.path.basename(image_path)}")
-            Image.fromarray(foreground).save(output_path)
-            
-        except Exception as e:
-            # Use tqdm.write to print messages without breaking the progress bar
-            tqdm.write(f"Error processing {os.path.basename(image_path)}: {str(e)}")
+        if not image_files:
             continue
+
+        relative_path = os.path.relpath(dirpath, data_dir)
+        display_path = os.path.basename(data_dir)
+        if relative_path != '.':
+            display_path = os.path.join(display_path, relative_path)
+
+        print(f"Found {len(image_files)} images in '{display_path}'")
+        
+        for image_path in tqdm(image_files, desc=f"Processing images in '{display_path}'"):
+            try:
+                # Extract foreground using the extract_one() function
+                _, _, _, _, foreground = extract_one(image_path, block_size, delta, kernel_size)
+                
+                # Save the foreground image to the out dir
+                output_path = os.path.join(current_output_dir, os.path.basename(image_path))
+                Image.fromarray(foreground).save(output_path)
+                
+            except Exception as e:
+                # Use tqdm.write to print messages without breaking the progress bar
+                tqdm.write(f"Error processing {os.path.basename(image_path)}: {str(e)}")
+                continue
     
-    print(f"Processing complete! Foreground images saved to {output_folder}")
+    print(f"Processing complete! Foreground images saved to {out_dir}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Fingerprint Foreground Extraction')
-    parser.add_argument('-i', '--input_folder', type=str, required=True,
-                        help='Input folder containing fingerprint images')
-    parser.add_argument('-o', '--output_folder', type=str, default='./foregrounds',
-                        help='Output folder for foreground images (default: ./foregrounds)')
-    parser.add_argument('-b', '--block_size', type=int, default=5,
-                        help='Block size for adaptive thresholding (default: 5)')
-    parser.add_argument('-d', '--delta', type=int, default=15,
-                        help='Delta value for adaptive thresholding (default: 15)')
-    parser.add_argument('-k', '--kernel_size', type=int, default=5,
-                        help='Kernel size for morphological operations (default: 5)')
+    parser.add_argument('-i', '--data_dir', type=str, required=True,
+                        help='Input directory containing fingerprint images')
+    parser.add_argument('-o', '--out_dir', type=str, default='./foregrounds',
+                        help='Output directory for foreground images (default: ./foregrounds)')
+    parser.add_argument('-b', '--block_size', type=int, default=3,
+                        help='Block size for adaptive thresholding (must be an odd integer > 1, default: 3)')
+    parser.add_argument('-d', '--delta', type=int, default=2,
+                        help='Delta value for adaptive thresholding (default: 2)')
+    parser.add_argument('-k', '--kernel_size', type=int, default=15,
+                        help='Kernel size for morphological operations (default: 15)')
     
     args = parser.parse_args()
-    extract_folder(args.input_folder, args.output_folder, args.block_size, args.delta, args.kernel_size)
+
+    extract_all(
+        data_dir=args.data_dir,
+        out_dir=args.out_dir,
+        block_size=args.block_size,
+        delta=args.delta,
+        kernel_size=args.kernel_size
+    )
