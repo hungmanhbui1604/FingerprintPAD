@@ -11,5 +11,5 @@ for i in "${!sensors[@]}"; do
     python foreground_extraction.py -i "${data_dir}/${sensors[i]}" -o "$out_dir/${sensors[i]}" -b ${block_sizes[i]} -d ${deltas[i]} -k ${kernel_sizes[i]}
 done
 
-# i=2
+# i=0
 # python foreground_extraction.py -i "${data_dir}/${sensors[$i]}" -o "$out_dir/${sensors[$i]}" -b ${block_sizes[i]} -d ${deltas[i]} -k ${kernel_sizes[i]}

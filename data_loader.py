@@ -7,7 +7,6 @@ from torchvision import transforms
 
 class IntraSensorBinaryDataset(Dataset):
     def __init__(self, year, sensor, dataset_path, train=True):
-        self.transform = transform
         self.samples = []
         self.label_map = {'Live': 0, 'Spoof': 1}
 
@@ -47,7 +46,6 @@ class IntraSensorBinaryDataset(Dataset):
 
 class IntraSensorMultiClassDataset(Dataset):
     def __init__(self, year, sensor, dataset_path, train=True):
-        self.transform = transform
         self.samples = []
         self.label_map = {'Live': 0}
 
@@ -93,7 +91,6 @@ class IntraSensorMultiClassDataset(Dataset):
 
 class CrossSensorBinaryDataset(Dataset):
     def __init__(self, year, sensor, dataset_path):
-        self.transform = transform
         self.samples = []
         self.label_map = {'Live': 0, 'Spoof': 1}
 
@@ -132,7 +129,6 @@ class CrossSensorBinaryDataset(Dataset):
 
 class CrossSensorMultiClassDataset(Dataset):
     def __init__(self, year, sensor, dataset_path):
-        self.transform = transform
         self.samples = []
         self.label_map = {'Live': 0}
 
@@ -201,7 +197,7 @@ class TransformedDataset(Dataset):
             image = self.transform(image)
         return image, label
 
-def split_dataset(dataset: Dataset, val_split: float = 0.2, seed: int = 42) -> tuple[Subset, Subset]:
+def split_dataset(dataset: Dataset, val_split: float = 0.2, seed: int = 42):
     if not 0 < val_split < 1:
         raise ValueError("Validation split must be between 0 and 1.")
 
@@ -217,16 +213,15 @@ def get_dataloader(
     year: str,
     sensor: str,
     dataset_path: str,
-    phase: str,
+    train: bool,
     binary_class: bool,
     transform: dict[str, transforms.Compose],
     batch_size: int,
     num_workers: int,
     val_split: float = 0.2,
     seed: int = 42,
-) -> tuple[DataLoader, DataLoader | None]:
+):
     if intra:
-        train = phase == 'Train'
         if binary_class:
             dataset = IntraSensorBinaryDataset(year, sensor, dataset_path, train=train)
         else:
@@ -237,65 +232,17 @@ def get_dataloader(
         else:
             dataset = CrossSensorMultiClassDataset(year, sensor, dataset_path)
 
-    if phase == 'Train':
+    label_map = dataset.label_map
+
+    if train:
         train_subset, val_subset = split_dataset(dataset, val_split=val_split, seed=seed)
         train_dataset = TransformedDataset(train_subset, transform['Train'])
         val_dataset = TransformedDataset(val_subset, transform['Test'])
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-        return train_loader, val_loader
+
+        return train_loader, val_loader, label_map
     else: # Test phase
         test_dataset = TransformedDataset(dataset, transform['Test'])
         test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-        return test_loader, None
-
-
-if __name__ == '__main__':
-    # Example usage:
-    DATASET_PATH = '/home/hmb1604/projects/FinPAD/data'
-    YEAR = '2015'
-    SENSOR = 'CrossMatch'
-    
-    # Define transformations
-    transform = {
-        'Train': transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]),
-        'Test': transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-    }
-
-    try:
-        # --- Test get_dataloader function ---
-        print("--- Testing get_dataloader function ---")
-
-        # 1. Intra-sensor, Binary, Train -> returns train_loader and val_loader
-        print("\n1. Intra-sensor, Binary, Train -> train/val split")
-        train_loader_1, val_loader_1 = get_dataloader(
-            intra=True, year=YEAR, sensor=SENSOR, dataset_path=DATASET_PATH,
-            phase='Train', binary_class=True, transform=transform,
-            batch_size=32, num_workers=4
-        )
-        print(f"Train loader 1 batches: {len(train_loader_1)}")
-        print(f"Validation loader 1 batches: {len(val_loader_1)}")
-        assert val_loader_1 is not None
-
-        # 2. Intra-sensor, Binary, Test -> returns test_loader and None
-        print("\n2. Intra-sensor, Binary, Test")
-        test_loader_2, val_loader_2 = get_dataloader(
-            intra=True, year=YEAR, sensor=SENSOR, dataset_path=DATASET_PATH,
-            phase='Test', binary_class=True, transform=transform,
-            batch_size=32, num_workers=4
-        )
-        print(f"Test loader 2 batches: {len(test_loader_2)}")
-        assert val_loader_2 is None
-        
-    except (RuntimeError, FileNotFoundError, ValueError) as e:
-        print(f"\nAn error occurred: {e}")
-        print("Please ensure the dataset is located at the correct path and has the expected structure.")
+        return test_loader, label_map
