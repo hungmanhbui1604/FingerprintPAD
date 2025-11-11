@@ -64,8 +64,8 @@ if __name__ == '__main__':
         spoof_criterion_type=config['SPOOF_CRITERION_TYPE'],
         material_criterion_type=config['MATERIAL_CRITERION_TYPE'],
         optimizer_type=config['OPTIMIZER_TYPE'],
-        learning_rate=config['LR'],
-        weight_decay=config['OPTIMIZER_WEIGHT_DECAY'],
+        learning_rate=config['LEARNING_RATE'],
+        weight_decay=config['WEIGHT_DECAY'],
         scheduler_type=config['SCHEDULER_TYPE'],
         num_epochs=config['NUM_EPOCHS'],
     )
