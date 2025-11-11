@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision.models as models
+import torch.optim as optim
 
 
 class MultitaskModel(nn.Module):
@@ -69,3 +70,99 @@ class MobileNetV2Backbone(nn.Module):
         x = torch.flatten(x, 1)
         
         return x
+
+
+class ResNet50Backbone(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Load pre-trained ResNet50 with latest weights parameter
+        resnet = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+        
+        # Extract features part (excluding classifier)
+        self.features = nn.Sequential(*list(resnet.children())[:-1])
+        
+        # Feature dimension after feature extractor (ResNet50's last channel size)
+        self.feature_dim = 2048
+        
+    def forward(self, x):
+        # Extract features using backbone
+        x = self.features(x)
+        
+        # Flatten the features
+        x = torch.flatten(x, 1)
+        
+        return x
+
+
+class EfficientNetB0Backbone(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Load pre-trained EfficientNet-B0 with latest weights parameter
+        from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
+        efficientnet = efficientnet_b0(weights=EfficientNet_B0_Weights.DEFAULT)
+        
+        # Extract features part (excluding classifier)
+        self.features = nn.Sequential(*list(efficientnet.children())[:-1])
+        
+        # Feature dimension after feature extractor (EfficientNet-B0's last channel size)
+        self.feature_dim = 1280
+        
+    def forward(self, x):
+        # Extract features using backbone
+        x = self.features(x)
+        
+        # Flatten the features
+        x = torch.flatten(x, 1)
+        
+        return x
+
+
+def get_model(
+    backbone_name,
+    num_material_classes,
+    spoof_criterion_type='bce_with_logits', 
+    material_criterion_type='cross_entropy',
+    optimizer_type='adam',
+    learning_rate=1e-3,
+    weight_decay=1e-4,
+    scheduler_type='cosine_annealing',
+    num_epochs=100,
+):
+    
+    if backbone_name.lower() == 'mobilenetv2':
+        backbone = MobileNetV2Backbone()
+    elif backbone_name.lower() == 'resnet50':
+        backbone = ResNet50Backbone()
+    elif backbone_name.lower() == 'efficientnetb0':
+        backbone = EfficientNetB0Backbone()
+    else:
+        raise ValueError(f"Unsupported backbone: {backbone_name}. Supported backbones: 'mobilenetv2', 'resnet50', 'efficientnetb0'")
+    
+    # Create the multitask model
+    model = MultitaskModel(backbone, num_material_classes)
+    
+    # Define spoof criterion based on type
+    if spoof_criterion_type.lower() == 'bce_with_logits':
+        spoof_criterion = nn.BCEWithLogitsLoss()
+    else:
+        raise ValueError(f"Unsupported spoof criterion type: {spoof_criterion_type}. Supported types: 'bce_with_logits'")
+    
+    # Define material criterion based on type
+    if material_criterion_type.lower() == 'cross_entropy':
+        material_criterion = nn.CrossEntropyLoss()
+    else:
+        raise ValueError(f"Unsupported material criterion type: {material_criterion_type}. Supported types: 'cross_entropy'")
+    
+    # Create optimizer
+    if optimizer_type.lower() == 'adam':
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    else:
+        raise ValueError(f"Unsupported optimizer type: {optimizer_type}. Supported types: 'adam'")
+    
+    # Define scheduler based on type
+    if scheduler_type.lower() == 'cosine_annealing':
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs,eta_min=1e-6)
+    else:
+        raise ValueError(f"Unsupported scheduler type: {scheduler_type}. Supported types: 'cosine_annealing'")
+    
+    return model, spoof_criterion, material_criterion, optimizer, scheduler
