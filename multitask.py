@@ -83,11 +83,11 @@ if __name__ == '__main__':
         print('-' * 36)
 
         train_one_epoch(model, train_loader, spoof_criterion, material_criterion, optimizer, device, config)
-        val_epoch_spoof_loss = validate_one_epoch(model, val_loader, spoof_criterion, material_criterion, device, config)
+        val_epoch_total_loss = validate_one_epoch(model, val_loader, spoof_criterion, material_criterion, device, config)
         
         # Save the best model based on spoof validation loss
-        if val_epoch_spoof_loss < best_val_loss:
-            best_val_loss = val_epoch_spoof_loss
+        if val_epoch_total_loss < best_val_loss:
+            best_val_loss = val_epoch_total_loss
             best_model_state = model.state_dict().copy()
             print(f"New best model found! Saving to {config['MODEL_SAVE_PATH']}")
             torch.save({

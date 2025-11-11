@@ -115,7 +115,7 @@ def validate_one_epoch(model, val_loader, spoof_criterion, material_criterion, d
     
     print(f'Val Loss: Total=[{val_epoch_total_loss:.4f}] Spoof=[{val_epoch_spoof_loss:.4f}] Material=[{val_epoch_material_loss:.4f}]')
     print(f'Val Acc: Spoof=[{val_epoch_spoof_acc:.2f}] Material=[{val_epoch_material_acc:.2f}]')
-    return val_epoch_spoof_loss
+    return val_epoch_total_loss
 
 def test_one_epoch(model, test_loader, device):
     model.eval()
